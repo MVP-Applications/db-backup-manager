@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>DB Backup Manager</title>
+<style>
+  :root {
+    --bg: #0f1117; --surface: #1a1d27; --card: #21253a;
+    --border: #2e3350; --accent: #6c63ff; --accent2: #00d4aa;
+    --danger: #ff4d6d; --warn: #ffb703; --text: #e2e8f0;
+    --muted: #8892b0; --success: #22d3a5; --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', sans-serif; min-height: 100vh; }
+
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 32px; display: flex; align-items: center; justify-content: space-between; }
+  header h1 { font-size: 1.3rem; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+  header h1 span { background: var(--accent); padding: 4px 10px; border-radius: 6px; font-size: .8rem; }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 28px 24px; }
+
+  .topbar { display: flex; gap: 12px; justify-content: flex-end; margin-bottom: 24px; flex-wrap: wrap; }
+  .btn { padding: 9px 18px; border: none; border-radius: var(--radius); cursor: pointer; font-size: .9rem; font-weight: 600; transition: opacity .2s, transform .1s; }
+  .btn:hover { opacity: .85; transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-success { background: var(--accent2); color: #000; }
+  .btn-danger  { background: var(--danger); color: #fff; }
+  .btn-warn    { background: var(--warn); color: #000; }
+  .btn-ghost   { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-sm { padding: 5px 12px; font-size: .8rem; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 28px; }
+  .stat-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; }
+  .stat-card .label { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; }
+  .stat-card .value { font-size: 2rem; font-weight: 700; margin-top: 4px; }
+
+  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .section-header h2 { font-size: 1.1rem; font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border); }
+  thead { background: var(--surface); }
+  th { padding: 12px 16px; text-align: left; font-size: .8rem; text-transform: uppercase; color: var(--muted); letter-spacing: .05em; }
+  td { padding: 14px 16px; font-size: .9rem; border-top: 1px solid var(--border); vertical-align: middle; }
+  tr:hover td { background: rgba(108,99,255,.06); }
+
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: .75rem; font-weight: 600; }
+  .badge-mongo  { background: rgba(0,212,170,.15); color: var(--accent2); }
+  .badge-mysql  { background: rgba(108,99,255,.15); color: #a78bfa; }
+  .badge-success{ background: rgba(34,211,165,.15); color: var(--success); }
+  .badge-failed { background: rgba(255,77,109,.15); color: var(--danger); }
+  .badge-never  { background: rgba(136,146,176,.15); color: var(--muted); }
+  .badge-on     { background: rgba(0,212,170,.15); color: var(--accent2); }
+  .badge-off    { background: rgba(255,183,3,.15); color: var(--warn); }
+
+  /* Modal */
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 100; align-items: center; justify-content: center; }
+  .overlay.open { display: flex; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 28px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; }
+  .modal h2 { font-size: 1.1rem; margin-bottom: 20px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .form-group { margin-bottom: 14px; display: flex; flex-direction: column; gap: 6px; }
+  .form-group label { font-size: .82rem; color: var(--muted); }
+  .form-group input, .form-group select { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 9px 12px; color: var(--text); font-size: .9rem; outline: none; transition: border-color .2s; }
+  .form-group input:focus, .form-group select:focus { border-color: var(--accent); }
+  .form-group.full { grid-column: 1 / -1; }
+  .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+  .type-toggle { display: flex; gap: 0; background: var(--card); border-radius: 8px; overflow: hidden; border: 1px solid var(--border); }
+  .type-toggle label { flex: 1; text-align: center; padding: 9px; font-size: .9rem; cursor: pointer; }
+  .type-toggle input { display: none; }
+  .type-toggle input:checked + span { background: var(--accent); color: #fff; display: block; }
+  .type-toggle span { display: block; padding: 0; border-radius: 0; transition: background .2s; }
+
+  /* Log panel */
+  .log-box { background: #0a0c14; border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; font-family: monospace; font-size: .82rem; color: #7ee8a2; white-space: pre-wrap; max-height: 340px; overflow-y: auto; margin-top: 24px; }
+
+  /* Detail modal */
+  .detail-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: .9rem; }
+  .detail-row:last-child { border-bottom: none; }
+  .detail-row .key { color: var(--muted); }
+  .detail-row .val { font-weight: 500; word-break: break-all; max-width: 60%; text-align: right; }
+
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #fff4; border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .empty { text-align: center; padding: 48px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🗄️ DB Backup Manager <span>v1.0</span></h1>
+  <div style="display:flex;gap:10px">
+    <button class="btn btn-warn btn-sm" onclick="loadLogs()">📋 Logs</button>
+    <button class="btn btn-success btn-sm" onclick="backupAll()">▶ Backup All</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="stats" id="stats"></div>
+
+  <div class="section-header">
+    <h2>Registered Databases</h2>
+    <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add Database</button>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th><th>Type</th><th>Host / URI</th><th>Database</th>
+        <th>Last Backup</th><th>Size</th><th>Status</th><th>Enabled</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody id="db-table-body">
+      <tr><td colspan="9" class="empty">Loading...</td></tr>
+    </tbody>
+  </table>
+
+  <div id="log-section" style="display:none">
+    <div class="section-header" style="margin-top:28px">
+      <h2>📋 Backup Logs</h2>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('log-section').style.display='none'">✕ Close</button>
+    </div>
+    <div class="log-box" id="log-box"></div>
+  </div>
+</div>
+
+<!-- Add / Edit Modal -->
+<div class="overlay" id="db-modal">
+  <div class="modal">
+    <h2 id="modal-title">Add New Database</h2>
+    <input type="hidden" id="edit-id" />
+
+    <div class="form-group">
+      <label>Friendly Name *</label>
+      <input id="f-name" placeholder="e.g. production-users-db" />
+    </div>
+
+    <div class="form-group">
+      <label>Database Type *</label>
+      <div class="type-toggle">
+        <label><input type="radio" name="dbtype" value="mysql" checked onchange="toggleType(this.value)"><span>🐬 MySQL</span></label>
+        <label><input type="radio" name="dbtype" value="mongodb" onchange="toggleType(this.value)"><span>🍃 MongoDB</span></label>
+      </div>
+    </div>
+
+    <!-- MySQL fields -->
+    <div id="mysql-fields">
+      <hr class="divider"/>
+      <div class="form-row">
+        <div class="form-group"><label>Host *</label><input id="f-host" placeholder="cloud-host-1.example.com"/></div>
+        <div class="form-group"><label>Port</label><input id="f-port" placeholder="3306" type="number"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Username *</label><input id="f-user" placeholder="root"/></div>
+        <div class="form-group"><label>Password</label><input id="f-pass" type="password" placeholder="••••••"/></div>
+      </div>
+      <div class="form-group"><label>Database Name *</label><input id="f-dbname" placeholder="mydb"/></div>
+    </div>
+
+    <!-- MongoDB fields -->
+    <div id="mongo-fields" style="display:none">
+      <hr class="divider"/>
+      <div class="form-group"><label>Connection URI *</label><input id="f-connstr" placeholder="mongodb+srv://user:pass@cluster.mongodb.net/mydb"/></div>
+      <p style="font-size:.78rem;color:var(--muted);margin-top:-8px">Or fill host/port/user/pass/dbname if no URI:</p>
+      <div class="form-row">
+        <div class="form-group"><label>Host</label><input id="f-host-m" placeholder="cluster.mongodb.net"/></div>
+        <div class="form-group"><label>Port</label><input id="f-port-m" placeholder="27017" type="number"/></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Username</label><input id="f-user-m" placeholder="admin"/></div>
+        <div class="form-group"><label>Password</label><input id="f-pass-m" type="password" placeholder="••••••"/></div>
+      </div>
+      <div class="form-group"><label>Database Name</label><input id="f-dbname-m" placeholder="mydb"/></div>
+    </div>
+
+    <div class="form-group" style="margin-top:12px">
+      <label><input type="checkbox" id="f-enabled" checked style="width:auto;margin-right:6px"/>Enable scheduled backups</label>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveDB()"><span id="save-btn-text">Add Database</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- Detail Modal -->
+<div class="overlay" id="detail-modal">
+  <div class="modal">
+    <h2 id="detail-title">Database Details</h2>
+    <div id="detail-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeDetail()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';  // same origin
+let editingId = null;
+
+async function apiFetch(url, opts={}) {
+  const r = await fetch(API + url, { headers: {'Content-Type':'application/json'}, ...opts });
+  return r.json();
+}
+
+function fmt(bytes) {
+  if (!bytes) return '—';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/1048576).toFixed(2) + ' MB';
+}
+function fmtDate(s) {
+  if (!s) return '—';
+  return new Date(s + 'Z').toLocaleString();
+}
+function statusBadge(s) {
+  if (!s) return '<span class="badge badge-never">Never</span>';
+  if (s === 'success') return '<span class="badge badge-success">✓ Success</span>';
+  return '<span class="badge badge-failed">✗ Failed</span>';
+}
+
+async function loadDBs() {
+  const dbs = await apiFetch('/api/databases');
+  const tbody = document.getElementById('db-table-body');
+
+  // Stats
+  const total = dbs.length;
+  const successful = dbs.filter(d=>d.last_backup_status==='success').length;
+  const failed = dbs.filter(d=>d.last_backup_status==='failed').length;
+  const totalSize = dbs.reduce((a,d)=>a+(d.last_backup_size||0),0);
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-card"><div class="label">Total DBs</div><div class="value">${total}</div></div>
+    <div class="stat-card"><div class="label">Last Backup OK</div><div class="value" style="color:var(--success)">${successful}</div></div>
+    <div class="stat-card"><div class="label">Last Backup Failed</div><div class="value" style="color:var(--danger)">${failed}</div></div>
+    <div class="stat-card"><div class="label">Storage Used</div><div class="value" style="color:var(--accent2);font-size:1.4rem">${fmt(totalSize)}</div></div>
+  `;
+
+  if (!dbs.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">No databases registered yet. Click "+ Add Database" to get started.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = dbs.map(d => {
+    const host = d.connection_string
+      ? d.connection_string.replace(/:[^:@]*@/, ':****@').substring(0,40)+'…'
+      : (d.host || '—');
+    return `<tr>
+      <td><strong>${d.name}</strong></td>
+      <td>${d.db_type==='mongodb'
+        ? '<span class="badge badge-mongo">🍃 MongoDB</span>'
+        : '<span class="badge badge-mysql">🐬 MySQL</span>'}</td>
+      <td style="font-size:.82rem;color:var(--muted)">${host}</td>
+      <td>${d.database_name||'—'}</td>
+      <td style="font-size:.82rem">${fmtDate(d.last_backup_at)}</td>
+      <td>${fmt(d.last_backup_size)}</td>
+      <td>${statusBadge(d.last_backup_status)}</td>
+      <td>${d.backup_enabled
+        ? '<span class="badge badge-on">On</span>'
+        : '<span class="badge badge-off">Off</span>'}</td>
+      <td>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-success btn-sm" onclick="triggerBackup(${d.id},'${d.name}',this)">▶</button>
+          <button class="btn btn-ghost btn-sm" onclick="showDetail(${d.id})">👁</button>
+          <button class="btn btn-ghost btn-sm" onclick="openEditModal(${d.id})">✏</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteDB(${d.id},'${d.name}')">🗑</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+async function triggerBackup(id, name, btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  const r = await apiFetch(`/api/databases/${id}/backup`, {method:'POST'});
+  btn.disabled = false;
+  btn.innerHTML = '▶';
+  alert(r.status === 'success'
+    ? `✅ Backup of "${name}" succeeded!\nSize: ${fmt(r.size)}`
+    : `❌ Backup of "${name}" failed:\n${r.error}`);
+  loadDBs();
+}
+
+async function backupAll() {
+  if (!confirm('Run backup for all enabled databases now?')) return;
+  const r = await apiFetch('/api/backup/all', {method:'POST'});
+  const lines = Object.entries(r).map(([n,v])=>`${n}: ${v.status}`).join('\n');
+  alert('Backup run complete:\n\n' + lines);
+  loadDBs();
+}
+
+async function deleteDB(id, name) {
+  if (!confirm(`Delete "${name}" from registry?\n(Backup files are NOT removed)`)) return;
+  await apiFetch(`/api/databases/${id}`, {method:'DELETE'});
+  loadDBs();
+}
+
+// ── Add / Edit ──────────────────────────────────────────
+function toggleType(type) {
+  document.getElementById('mysql-fields').style.display = type==='mysql' ? '' : 'none';
+  document.getElementById('mongo-fields').style.display = type==='mongodb' ? '' : 'none';
+}
+
+function openAddModal() {
+  editingId = null;
+  document.getElementById('modal-title').textContent = 'Add New Database';
+  document.getElementById('save-btn-text').textContent = 'Add Database';
+  document.getElementById('edit-id').value = '';
+  ['f-name','f-host','f-port','f-user','f-pass','f-dbname','f-connstr','f-host-m','f-port-m','f-user-m','f-pass-m','f-dbname-m']
+    .forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('f-enabled').checked = true;
+  document.querySelectorAll('input[name="dbtype"]')[0].checked = true;
+  toggleType('mysql');
+  document.getElementById('db-modal').classList.add('open');
+}
+
+async function openEditModal(id) {
+  const d = await apiFetch(`/api/databases/${id}`);
+  editingId = id;
+  document.getElementById('modal-title').textContent = 'Edit Database';
+  document.getElementById('save-btn-text').textContent = 'Save Changes';
+  document.getElementById('f-name').value = d.name;
+  const isMongoRadio = document.querySelectorAll('input[name="dbtype"]');
+  isMongoRadio[0].checked = d.db_type === 'mysql';
+  isMongoRadio[1].checked = d.db_type === 'mongodb';
+  toggleType(d.db_type);
+  if (d.db_type === 'mysql') {
+    document.getElementById('f-host').value = d.host||'';
+    document.getElementById('f-port').value = d.port||'';
+    document.getElementById('f-user').value = d.username||'';
+    document.getElementById('f-dbname').value = d.database_name||'';
+  } else {
+    document.getElementById('f-connstr').value = d.connection_string||'';
+    document.getElementById('f-host-m').value = d.host||'';
+    document.getElementById('f-port-m').value = d.port||'';
+    document.getElementById('f-user-m').value = d.username||'';
+    document.getElementById('f-dbname-m').value = d.database_name||'';
+  }
+  document.getElementById('f-enabled').checked = !!d.backup_enabled;
+  document.getElementById('db-modal').classList.add('open');
+}
+
+function closeModal() { document.getElementById('db-modal').classList.remove('open'); }
+
+async function saveDB() {
+  const type = document.querySelector('input[name="dbtype"]:checked').value;
+  const isMongo = type === 'mongodb';
+  const body = {
+    name: document.getElementById('f-name').value.trim(),
+    db_type: type,
+    host: isMongo ? document.getElementById('f-host-m').value : document.getElementById('f-host').value,
+    port: parseInt(isMongo ? document.getElementById('f-port-m').value : document.getElementById('f-port').value) || null,
+    username: isMongo ? document.getElementById('f-user-m').value : document.getElementById('f-user').value,
+    password: isMongo ? document.getElementById('f-pass-m').value : document.getElementById('f-pass').value,
+    database_name: isMongo ? document.getElementById('f-dbname-m').value : document.getElementById('f-dbname').value,
+    connection_string: isMongo ? document.getElementById('f-connstr').value : null,
+    backup_enabled: document.getElementById('f-enabled').checked ? 1 : 0
+  };
+  if (!body.name || !body.db_type) return alert('Name and type are required.');
+
+  let r;
+  if (editingId) {
+    r = await apiFetch(`/api/databases/${editingId}`, {method:'PUT', body:JSON.stringify(body)});
+  } else {
+    r = await apiFetch('/api/databases', {method:'POST', body:JSON.stringify(body)});
+  }
+  if (r.message) { closeModal(); loadDBs(); }
+  else alert(r.detail || 'Error saving database.');
+}
+
+// ── Detail view ──────────────────────────────────────────
+async function showDetail(id) {
+  const d = await apiFetch(`/api/databases/${id}`);
+  document.getElementById('detail-title').textContent = `📋 ${d.name}`;
+  const rows = [
+    ['Type', d.db_type === 'mongodb' ? '🍃 MongoDB' : '🐬 MySQL'],
+    ['Host', d.host || '—'],
+    ['Port', d.port || '—'],
+    ['Username', d.username || '—'],
+    ['Database', d.database_name || '—'],
+    ['Connection URI', d.connection_string ? d.connection_string.replace(/:[^:@]*@/,':****@') : '—'],
+    ['Backup Enabled', d.backup_enabled ? '✅ Yes' : '❌ No'],
+    ['Last Backup', fmtDate(d.last_backup_at)],
+    ['Last Backup Size', fmt(d.last_backup_size)],
+    ['Last Status', d.last_backup_status || 'Never run'],
+    ['Added', fmtDate(d.created_at)],
+  ];
+  document.getElementById('detail-body').innerHTML = rows.map(([k,v])=>
+    `<div class="detail-row"><span class="key">${k}</span><span class="val">${v}</span></div>`
+  ).join('');
+  document.getElementById('detail-modal').classList.add('open');
+}
+function closeDetail() { document.getElementById('detail-modal').classList.remove('open'); }
+
+// ── Logs ─────────────────────────────────────────────────
+async function loadLogs() {
+  const s = document.getElementById('log-section');
+  s.style.display = '';
+  const r = await apiFetch('/api/logs?lines=200');
+  document.getElementById('log-box').textContent = r.logs || '(no logs yet)';
+  s.scrollIntoView({behavior:'smooth'});
+}
+
+// ── Init ─────────────────────────────────────────────────
+loadDBs();
+setInterval(loadDBs, 30000); // auto-refresh every 30s
+</script>
+</body>
+</html>
